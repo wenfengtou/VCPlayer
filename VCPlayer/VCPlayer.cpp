@@ -4,6 +4,8 @@
 #include "framework.h"
 #include "VCPlayer.h"
 #include <MMDeviceAPI.h>
+#include <functiondiscoverykeys.h>
+#include <strsafe.h>
 
 #define MAX_LOADSTRING 100
 
@@ -27,6 +29,70 @@ template <class T> void SafeRelease(T** ppT)
     }
 }
 
+LPWSTR GetDeviceName(IMMDeviceCollection* DeviceCollection, UINT DeviceIndex)
+{
+    IMMDevice *device;
+    LPWSTR deviceId;
+    HRESULT hr;
+    hr = DeviceCollection->Item(DeviceIndex, &device);
+    if (FAILED(hr))
+    {
+        OutputDebugStringW(L"DeviceCollection->Item error");
+    }
+    else
+    {
+        OutputDebugStringW(L"DeviceCollection->Item success");
+    }
+    device->GetId(&deviceId);
+
+    IPropertyStore *propertyStore;
+    hr = device->OpenPropertyStore(STGM_READ, &propertyStore);
+    
+    if (FAILED(hr))
+    {
+        OutputDebugStringW(L"OpenPropertyStore error");
+    }
+    else
+    {
+        OutputDebugStringW(L"OpenPropertyStore success");
+    }
+
+    PROPVARIANT friendlyName; 
+    hr = propertyStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringW(L"PKEY_Device_FriendlyName error");
+    }
+    else
+    {
+        OutputDebugStringW(L"PKEY_Device_FriendlyName success");
+    }
+    SafeRelease(&propertyStore);
+
+    wchar_t deviceName[128];
+    hr = StringCbPrintf(deviceName, sizeof(deviceName), L"%s (%s)", friendlyName.vt != VT_LPWSTR ? L"Unknown" : friendlyName.pwszVal, deviceId);
+    if (FAILED(hr))
+    {
+        OutputDebugStringW(L"StringCbPrintf error");
+    }
+    else
+    {
+        OutputDebugStringW(L"StringCbPrintf success");
+    }
+
+    PropVariantClear(&friendlyName);
+    CoTaskMemFree(deviceId);
+
+    wchar_t* returnValue = _wcsdup(deviceName);
+    if (returnValue == NULL)
+    {
+        printf("Unable to allocate buffer for return\n");
+        return NULL;
+    }
+    return returnValue;
+}
+
 
 bool PickDevice(IMMDevice** DeviceToUse, bool* IsDefaultDevice, ERole* DefaultDeviceRole)
 {
@@ -46,7 +112,8 @@ bool PickDevice(IMMDevice** DeviceToUse, bool* IsDefaultDevice, ERole* DefaultDe
 
     hr = deviceEnumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &deviceCollection);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr)) 
+    {
         OutputDebugStringW(L"EnumAudioEndpoints error");
     }
     else
@@ -64,6 +131,33 @@ bool PickDevice(IMMDevice** DeviceToUse, bool* IsDefaultDevice, ERole* DefaultDe
     {
         OutputDebugStringW(L"GetCount success");
     }
+
+    for (UINT i = 0; i < deviceCount; i += 1)
+    {
+        LPWSTR deviceName;
+
+        deviceName = GetDeviceName(deviceCollection, i);
+        if (deviceName == NULL)
+        {
+            OutputDebugStringW(L"deviceName == NULL");
+        }
+        printf("    %d:  %S\n", i + 3, deviceName);
+        free(deviceName);
+    }
+    IMMDevice* device = NULL;
+    ERole deviceRole = eConsole;
+    hr = deviceEnumerator->GetDefaultAudioEndpoint(eCapture, deviceRole, &device);
+    
+    if (FAILED(hr)) {
+        OutputDebugStringW(L"GetDefaultAudioEndpoint error");
+    }
+    else
+    {
+        OutputDebugStringW(L"GetDefaultAudioEndpoint success");
+    }
+    *IsDefaultDevice = true;
+    *DefaultDeviceRole = deviceRole;
+    *DeviceToUse = device;
 
     return true;
 }
